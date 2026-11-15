@@ -1,0 +1,1 @@
+"""Vantage FastAPI application."""
