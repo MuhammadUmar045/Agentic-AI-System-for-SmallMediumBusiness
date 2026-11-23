@@ -7,11 +7,11 @@ import { accountGetBusinessSetup, accountUpdateBusinessSetup } from "../../utils
 
 export default function BusinessSetupView({ showToast }) {
   const [form, setForm] = useState({
-    business_name: "Vantage Retail",
+    name: "Vantage Retail",
     industry: "Retail & FMCG",
     currency: "PKR",
     tax_rate: 0.0,
-    annual_leave_allowance: 14,
+    annual_leave_days: 14,
     working_days_per_month: 26,
     low_stock_threshold_default: 10,
   });
@@ -25,11 +25,11 @@ export default function BusinessSetupView({ showToast }) {
         const data = await accountGetBusinessSetup();
         if (data) {
           setForm({
-            business_name: data.business_name || "Vantage Retail",
+            name: data.name || "Vantage Retail",
             industry: data.industry || "Retail & FMCG",
             currency: data.currency || "PKR",
             tax_rate: data.tax_rate !== undefined ? data.tax_rate : 0.0,
-            annual_leave_allowance: data.annual_leave_allowance || 14,
+            annual_leave_days: data.annual_leave_days || 14,
             working_days_per_month: data.working_days_per_month || 26,
             low_stock_threshold_default: data.low_stock_threshold_default || 10,
           });
@@ -49,7 +49,7 @@ export default function BusinessSetupView({ showToast }) {
       await accountUpdateBusinessSetup({
         ...form,
         tax_rate: Number(form.tax_rate),
-        annual_leave_allowance: Number(form.annual_leave_allowance),
+        annual_leave_days: Number(form.annual_leave_days),
         working_days_per_month: Number(form.working_days_per_month),
         low_stock_threshold_default: Number(form.low_stock_threshold_default),
       });
@@ -81,8 +81,8 @@ export default function BusinessSetupView({ showToast }) {
                 <input
                   type="text"
                   required
-                  value={form.business_name}
-                  onChange={(e) => setForm({ ...form, business_name: e.target.value })}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13 }}
                 />
               </div>
@@ -148,8 +148,8 @@ export default function BusinessSetupView({ showToast }) {
                   min="0"
                   max="365"
                   required
-                  value={form.annual_leave_allowance}
-                  onChange={(e) => setForm({ ...form, annual_leave_allowance: e.target.value })}
+                  value={form.annual_leave_days}
+                  onChange={(e) => setForm({ ...form, annual_leave_days: e.target.value })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13 }}
                 />
                 <span style={{ fontSize: 11, color: C.inkLighter, marginTop: 4, display: "block" }}>Days per year (default 14)</span>

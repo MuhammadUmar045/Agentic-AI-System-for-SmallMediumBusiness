@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 60 * 24
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,https://aicoo-smeo.netlify.app"
 
     # SMTP settings for email verification
     smtp_host: str = "smtp.gmail.com"

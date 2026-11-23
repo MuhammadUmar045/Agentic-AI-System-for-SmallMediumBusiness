@@ -1,6 +1,11 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Accept either the Render service origin or the documented /api/v1 base URL.
+// Some routers are mounted at /api/... while core routes use /api/v1/..., so
+// keep the configured base at the service origin before joining either path.
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000")
+  .replace(/\/+$/, "")
+  .replace(/\/api(?:\/v1)?$/i, "");
 const TOKEN_KEY = "vantage_access_token";
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 60000;
 
 export function getAccessToken() { return localStorage.getItem(TOKEN_KEY); }
 export function setAccessToken(token) {
@@ -15,7 +20,7 @@ async function request(path, options = {}) {
 
   // Normalize path if missing /api prefix
   const urlPath = path.startsWith("/api") ? path : `/api/v1${path}`;
-  const url = `${API_BASE_URL}${urlPath}`;
+  const url = new URL(urlPath, `${API_BASE_URL}/`).toString();
 
   try {
     const response = await fetch(url, {
@@ -43,6 +48,11 @@ async function request(path, options = {}) {
     }
     if (!response.ok) throw new Error(body.detail || "The server could not complete the request.");
     return body;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("The server took too long to respond. Please try again.");
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }

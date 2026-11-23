@@ -18,6 +18,21 @@ logger = logging.getLogger("vantage.database")
 class SupabaseAdapter:
     """Async client for Supabase using PostgREST REST API via httpx."""
 
+    USER_COLUMNS = {
+        "id",
+        "business_id",
+        "full_name",
+        "email",
+        "phone_number",
+        "password_hash",
+        "role",
+        "status",
+        "failed_login_count",
+        "plan",
+        "owner_id",
+        "created_at",
+    }
+
     def __init__(self, settings: Settings):
         self.base_url = f"{settings.supabase_url.rstrip('/')}/rest/v1"
         self.api_key = settings.effective_supabase_key
@@ -57,7 +72,10 @@ class SupabaseAdapter:
         if resp.status_code in (200, 201):
             return resp.json()
         logger.error("Supabase POST /%s error: %s %s", table, resp.status_code, resp.text)
-        return None
+        raise HTTPException(
+            status_code=502,
+            detail="The database could not save this record. Please try again.",
+        )
 
     async def _patch(self, table: str, params: dict[str, Any], payload: dict[str, Any]) -> Any:
         assert self.client is not None
@@ -87,9 +105,13 @@ class SupabaseAdapter:
             doc["id"] = str(uuid.uuid4())
         if "created_at" in doc and isinstance(doc["created_at"], datetime):
             doc["created_at"] = doc["created_at"].isoformat()
-        res = await self._post("users", doc)
+        # The SQL schema stores a user's name in full_name and the tenant
+        # display name in businesses.name. Legacy API aliases such as
+        # business/owner must not be sent as non-existent users columns.
+        database_doc = {key: value for key, value in doc.items() if key in self.USER_COLUMNS}
+        res = await self._post("users", database_doc)
         if res and isinstance(res, list):
-            return res[0]
+            return {**doc, **res[0]}
         return doc
 
     async def update_user(self, user_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:

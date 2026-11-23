@@ -109,6 +109,10 @@ async def health(config: Settings = Depends(get_settings)) -> dict[str, Any]:
 @app.post("/api/v1/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 @app.post("/api/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest, db=Depends(get_database)) -> AuthResponse:
+    email = str(payload.email).lower()
+    if await db.get_user_by_email(email):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
+
     now = datetime.now(UTC)
     user_id = str(uuid4())
     biz_id = str(uuid4())
@@ -119,7 +123,7 @@ async def register(payload: RegisterRequest, db=Depends(get_database)) -> AuthRe
         "business": payload.business.strip(),
         "owner": payload.owner.strip(),
         "full_name": payload.owner.strip(),
-        "email": str(payload.email).lower(),
+        "email": email,
         "phone_number": payload.phone_number,
         "password_hash": hash_password(payload.password),
         "role": payload.role,
@@ -129,6 +133,9 @@ async def register(payload: RegisterRequest, db=Depends(get_database)) -> AuthRe
         "owner_id": None,
         "created_at": now.isoformat(),
     }
+    # The users table references businesses(id) in Supabase. Create the tenant
+    # row first so registration works against the production schema as well as SQLite.
+    await db.create_business({"id": biz_id, "name": payload.business.strip()})
     created = await db.create_user(document)
     token = create_access_token(
         str(created["id"]),
