@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 # ==================== AUTH & USERS ====================
@@ -11,12 +11,30 @@ UserStatus = Literal["pending_verification", "active", "locked", "suspended"]
 
 
 class RegisterRequest(BaseModel):
-    business: str = Field(min_length=1, max_length=120)
-    owner: str = Field(min_length=1, max_length=120)
+    # Accepts both "business" and "business_name" (alias)
+    business: str = Field(default="", min_length=0, max_length=120)
+    business_name: str | None = Field(default=None, max_length=120)
+    # Accepts both "owner" and "full_name" (alias)
+    owner: str = Field(default="", min_length=0, max_length=120)
+    full_name: str | None = Field(default=None, max_length=120)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: FiveRole = "owner"
     phone_number: str | None = None
+
+    @model_validator(mode="after")
+    def normalise_aliases(self) -> "RegisterRequest":
+        # Resolve business: prefer "business", fall back to "business_name"
+        if not self.business and self.business_name:
+            self.business = self.business_name
+        if not self.business:
+            raise ValueError("'business' or 'business_name' is required and must not be empty")
+        # Resolve owner: prefer "owner", fall back to "full_name"
+        if not self.owner and self.full_name:
+            self.owner = self.full_name
+        if not self.owner:
+            raise ValueError("'owner' or 'full_name' is required and must not be empty")
+        return self
 
 
 class LoginRequest(BaseModel):
