@@ -49,7 +49,7 @@ uvicorn app.main:app --reload --port 8000
 
 The frontend connects to `http://localhost:8000/api/v1` by default. For a deployed API, set Netlify's `VITE_API_URL` to the Render service URL (the service origin or its `/api/v1` URL is accepted). On Render, ensure `CORS_ORIGINS` includes `https://aicoo-smeo.netlify.app` (and any development origin you need). Supabase credentials and the JWT secret belong only in the backend environment. Interactive API documentation is at `http://localhost:8000/docs`.
 
-For an existing Supabase database, run [`backend/supabase_migration_auth_columns.sql`](backend/supabase_migration_auth_columns.sql) in the Supabase SQL Editor before using signup. It adds any missing authentication columns to `public.users` without deleting existing rows.
+For an existing Supabase database, run [`backend/supabase_migration_auth_columns.sql`](backend/supabase_migration_auth_columns.sql) in the Supabase SQL Editor before using signup. It adds any missing authentication columns to `public.users` without deleting existing rows. On Render, set `SUPABASE_SERVICE_ROLE_KEY` to the service role JWT; the backend also accepts `SUPABASE_SERVICE_JWT` and `SUPABASE_SERVICE_ROLE_JWT` for compatibility. The anon key cannot perform the signup inserts required by this app.
 
 ## Project Structure
 

@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     # Supabase connection settings
     supabase_url: str = ""
     supabase_key: str = ""
+    supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    supabase_service_role_jwt: str = ""
+    supabase_service_jwt: str = ""
 
     jwt_secret: str = "change-me-before-production"
     jwt_algorithm: str = "HS256"
@@ -40,15 +43,24 @@ class Settings(BaseSettings):
 
     @property
     def effective_supabase_key(self) -> str:
-        return self.supabase_service_role_key or self.supabase_key
+        return (
+            self.supabase_service_role_key
+            or self.supabase_service_role_jwt
+            or self.supabase_service_jwt
+            or self.supabase_key
+            or self.supabase_anon_key
+        )
 
     @property
     def supabase_configured(self) -> bool:
+        key = self.effective_supabase_key
         return bool(
             self.supabase_url
-            and self.effective_supabase_key
+            and key
             and "supabase" in self.supabase_url
             and not self.supabase_url.startswith("https://your-project")
+            # Must be a real JWT (service_role or anon key), not a publishable/legacy key
+            and key.startswith("eyJ")
         )
 
     @property
