@@ -166,7 +166,7 @@ async def invite_tenant_user(
         "owner_id": token_payload.get("sub"),
         "created_at": now,
     }
-    created = await db.create_user(doc)
+    created = await db.create_user(doc, auth_password=payload.password)
 
     await db.record_audit_log(
         business_id=business_id,

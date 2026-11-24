@@ -34,7 +34,8 @@ class SupabaseAdapter:
     }
 
     def __init__(self, settings: Settings):
-        self.base_url = f"{settings.supabase_url.rstrip('/')}/rest/v1"
+        self.project_url = settings.supabase_url.rstrip("/")
+        self.base_url = f"{self.project_url}/rest/v1"
         self.api_key = settings.effective_supabase_key
         self.headers = {
             "apikey": self.api_key,
@@ -99,17 +100,55 @@ class SupabaseAdapter:
         rows = await self._get("users", {"phone_number": f"eq.{phone}", "select": "*"})
         return rows[0] if rows else None
 
-    async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+    async def _create_supabase_auth_user(self, email: str, password: str) -> str:
+        """Create the matching Supabase Auth identity for schemas that link users.id to auth.users."""
+        assert self.client is not None
+        response = await self.client.post(
+            f"{self.project_url}/auth/v1/admin/users",
+            json={"email": email, "password": password, "email_confirm": True},
+            headers=self.headers,
+        )
+        if response.status_code not in (200, 201):
+            logger.error("Supabase Auth user creation failed: %s %s", response.status_code, response.text)
+            raise HTTPException(status_code=502, detail="The authentication service could not create this account.")
+        auth_user = response.json()
+        if not auth_user.get("id"):
+            logger.error("Supabase Auth user creation returned no user id")
+            raise HTTPException(status_code=502, detail="The authentication service returned an invalid account.")
+        return str(auth_user["id"])
+
+    async def _delete_supabase_auth_user(self, user_id: str) -> None:
+        """Remove an Auth identity if its corresponding application row cannot be saved."""
+        assert self.client is not None
+        response = await self.client.delete(
+            f"{self.project_url}/auth/v1/admin/users/{user_id}",
+            headers=self.headers,
+        )
+        if response.status_code not in (200, 204):
+            logger.error("Supabase Auth cleanup failed for user %s: %s %s", user_id, response.status_code, response.text)
+
+    async def create_user(self, user_data: dict[str, Any], auth_password: str | None = None) -> dict[str, Any]:
         doc = {**user_data}
         if "id" not in doc:
             doc["id"] = str(uuid.uuid4())
         if "created_at" in doc and isinstance(doc["created_at"], datetime):
             doc["created_at"] = doc["created_at"].isoformat()
+        # Some deployed Supabase schemas retain users.id -> auth.users.id. Create
+        # the Auth identity first and use its UUID for the application row.
+        auth_user_id = None
+        if auth_password is not None:
+            auth_user_id = await self._create_supabase_auth_user(doc["email"].lower(), auth_password)
+            doc["id"] = auth_user_id
         # The SQL schema stores a user's name in full_name and the tenant
         # display name in businesses.name. Legacy API aliases such as
         # business/owner must not be sent as non-existent users columns.
         database_doc = {key: value for key, value in doc.items() if key in self.USER_COLUMNS}
-        res = await self._post("users", database_doc)
+        try:
+            res = await self._post("users", database_doc)
+        except Exception:
+            if auth_user_id:
+                await self._delete_supabase_auth_user(auth_user_id)
+            raise
         if res and isinstance(res, list):
             return {**doc, **res[0]}
         return doc
@@ -886,7 +925,7 @@ class SQLiteAdapter:
         conn.close()
         return dict(row) if row else None
 
-    async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+    async def create_user(self, user_data: dict[str, Any], auth_password: str | None = None) -> dict[str, Any]:
         conn = self._get_conn()
         user_id = user_data.get("id") or str(uuid.uuid4())
         created_at = str(user_data.get("created_at") or datetime.now(UTC).isoformat())

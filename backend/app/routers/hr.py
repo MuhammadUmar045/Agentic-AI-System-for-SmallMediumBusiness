@@ -107,7 +107,7 @@ async def create_employee(
             "status": "active",
             "owner_id": token_payload.get("sub"),
         }
-        created_user = await db.create_user(new_user)
+        created_user = await db.create_user(new_user, auth_password=login_pwd)
         user_id_created = created_user["id"]
 
     emp_doc = {

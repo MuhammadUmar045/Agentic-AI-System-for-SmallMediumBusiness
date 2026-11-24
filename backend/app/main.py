@@ -136,7 +136,7 @@ async def register(payload: RegisterRequest, db=Depends(get_database)) -> AuthRe
     # The users table references businesses(id) in Supabase. Create the tenant
     # row first so registration works against the production schema as well as SQLite.
     await db.create_business({"id": biz_id, "name": payload.business.strip()})
-    created = await db.create_user(document)
+    created = await db.create_user(document, auth_password=payload.password)
     token = create_access_token(
         str(created["id"]),
         settings,
@@ -255,7 +255,7 @@ async def add_team_member(
         "owner_id": current_user["id"],
         "created_at": now.isoformat(),
     }
-    created = await db.create_user(document)
+    created = await db.create_user(document, auth_password=payload.password)
     return TeamMemberResponse(
         id=str(created["id"]),
         business_id=biz_id,
