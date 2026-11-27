@@ -69,10 +69,27 @@ class SupabaseAdapter:
     async def _post(self, table: str, payload: dict[str, Any] | list[dict[str, Any]]) -> Any:
         assert self.client is not None
         headers = {**self.headers, "Prefer": "return=representation"}
-        resp = await self.client.post(f"/{table}", json=payload, headers=headers)
-        if resp.status_code in (200, 201):
-            return resp.json()
-        logger.error("Supabase POST /%s error: %s %s", table, resp.status_code, resp.text)
+        current_payload = payload
+        for _ in range(6):
+            resp = await self.client.post(f"/{table}", json=current_payload, headers=headers)
+            if resp.status_code in (200, 201):
+                return resp.json()
+            if resp.status_code == 400 and "PGRST204" in resp.text:
+                import re
+                m = re.search(r"Could not find the '([^']+)' column", resp.text)
+                if m:
+                    bad_col = m.group(1)
+                    logger.warning("Supabase POST /%s stripping missing column '%s'", table, bad_col)
+                    if isinstance(current_payload, list):
+                        current_payload = [{k: v for k, v in row.items() if k != bad_col} for row in current_payload]
+                    elif isinstance(current_payload, dict):
+                        current_payload = {k: v for k, v in current_payload.items() if k != bad_col}
+                    continue
+            logger.error("Supabase POST /%s error: %s %s", table, resp.status_code, resp.text)
+            raise HTTPException(
+                status_code=502,
+                detail="The database could not save this record. Please try again.",
+            )
         raise HTTPException(
             status_code=502,
             detail="The database could not save this record. Please try again.",
@@ -348,6 +365,24 @@ class SupabaseAdapter:
         return []
 
     # Ledger & Accounting
+    @staticmethod
+    def _normalize_ledger_row(row: dict[str, Any]) -> dict[str, Any]:
+        if "entry_date" in row and "amount" in row and "entry_type" in row:
+            return row
+        debit = float(row.get("debit") or 0.0)
+        credit = float(row.get("credit") or 0.0)
+        entry_type = row.get("entry_type") or ("revenue" if credit > 0 and debit == 0 else "expense")
+        amount = float(row.get("amount") if row.get("amount") is not None else (credit if entry_type == "revenue" else debit))
+        return {
+            **row,
+            "entry_date": str(row.get("entry_date") or row.get("transaction_date") or datetime.now(UTC).date().isoformat()),
+            "entry_type": entry_type,
+            "category": row.get("category") or row.get("account_type") or "General",
+            "amount": amount,
+            "source": row.get("source") or row.get("reference_type") or "manual",
+            "is_voided": bool(row.get("is_voided", False)),
+        }
+
     async def get_ledger_entries(
         self,
         business_id: str,
@@ -359,20 +394,45 @@ class SupabaseAdapter:
         params: dict[str, Any] = {
             "business_id": f"eq.{business_id}",
             "select": "*",
-            "order": "entry_date.desc,created_at.desc",
+            "order": "created_at.desc",
             "limit": str(limit),
         }
+        rows = await self._get("ledger_entries", params)
+        normalized = [self._normalize_ledger_row(r) for r in rows]
         if from_date:
-            params["entry_date"] = f"gte.{from_date}"
+            normalized = [r for r in normalized if str(r.get("entry_date", "")) >= from_date]
         if to_date:
-            params["entry_date"] = f"lte.{to_date}"
+            normalized = [r for r in normalized if str(r.get("entry_date", "")) <= to_date]
         if entry_type:
-            params["entry_type"] = f"eq.{entry_type}"
-        return await self._get("ledger_entries", params)
+            normalized = [r for r in normalized if r.get("entry_type") == entry_type]
+        return normalized
 
     async def create_ledger_entry(self, data: dict[str, Any]) -> dict[str, Any]:
-        res = await self._post("ledger_entries", data)
-        return res[0] if res and isinstance(res, list) else data
+        assert self.client is not None
+        headers = {**self.headers, "Prefer": "return=representation"}
+        resp = await self.client.post("/ledger_entries", json=data, headers=headers)
+        if resp.status_code in (200, 201):
+            rows = resp.json()
+            return self._normalize_ledger_row(rows[0]) if rows else self._normalize_ledger_row(data)
+        # Fallback for legacy Supabase ledger_entries schema (transaction_date, account_type, debit, credit)
+        if resp.status_code == 400 and "PGRST204" in resp.text:
+            amt = float(data.get("amount") or 0.0)
+            is_rev = data.get("entry_type") == "revenue"
+            legacy_doc = {
+                "id": data.get("id") or str(uuid.uuid4()),
+                "business_id": data["business_id"],
+                "transaction_date": str(data.get("entry_date") or datetime.now(UTC).date().isoformat()),
+                "description": data.get("description") or data.get("category") or "Ledger entry",
+                "account_type": data.get("category") or ("Revenue" if is_rev else "Expense"),
+                "debit": 0.0 if is_rev else amt,
+                "credit": amt if is_rev else 0.0,
+                "reference_type": data.get("source") or "manual",
+            }
+            res = await self._post("ledger_entries", legacy_doc)
+            row = res[0] if res and isinstance(res, list) else legacy_doc
+            return self._normalize_ledger_row({**data, **row})
+        logger.error("Supabase POST /ledger_entries error: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=502, detail="The database could not save this record. Please try again.")
 
     async def void_ledger_entry(self, entry_id: str, business_id: str, reason: str) -> dict[str, Any] | None:
         updates = {"is_voided": True, "voided_reason": reason}
@@ -392,7 +452,10 @@ class SupabaseAdapter:
         return res[0] if res and isinstance(res, list) else None
 
     async def get_financial_recommendations(self, business_id: str) -> list[dict[str, Any]]:
-        return await self._get("financial_recommendations", {"business_id": f"eq.{business_id}", "select": "*", "order": "created_at.desc"})
+        rows = await self._get("financial_recommendations", {"business_id": f"eq.{business_id}", "select": "*", "order": "created_at.desc"})
+        if not rows:
+            rows = await self._get("finance_recommendations", {"business_id": f"eq.{business_id}", "select": "*", "order": "created_at.desc"})
+        return rows
 
     async def create_financial_recommendation(self, data: dict[str, Any]) -> dict[str, Any]:
         res = await self._post("financial_recommendations", data)
@@ -480,6 +543,37 @@ class SupabaseAdapter:
                 await self._post("stock_history", sh)
 
         return created_sale
+
+    async def get_pos_sales(self, business_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        rows = await self._get(
+            "pos_sales",
+            {
+                "business_id": f"eq.{business_id}",
+                "select": "*",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+        )
+        if not rows:
+            orders = await self._get(
+                "pos_orders",
+                {
+                    "business_id": f"eq.{business_id}",
+                    "select": "*",
+                    "order": "created_at.desc",
+                    "limit": str(limit),
+                },
+            )
+            return [
+                {
+                    **o,
+                    "invoice_number": o.get("invoice_number") or o.get("order_number") or str(o.get("id", ""))[:8],
+                    "total": float(o.get("total") if o.get("total") is not None else o.get("total_amount", 0.0)),
+                    "customer_name": o.get("customer_name") or "Walk-in Customer",
+                }
+                for o in orders
+            ]
+        return rows
 
     # Compatibility methods
     async def get_workspace(self, business_id: str) -> dict[str, Any] | None:
@@ -933,27 +1027,36 @@ class SQLiteAdapter:
         biz_id = user_data.get("business_id") or user_data.get("business", user_id)
 
         try:
+            cursor = conn.execute("PRAGMA table_info(users)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            
+            insert_data = {
+                "id": user_id,
+                "business_id": biz_id,
+                "full_name": full_name,
+                "email": user_data["email"].lower(),
+                "phone_number": user_data.get("phone_number"),
+                "password_hash": user_data["password_hash"],
+                "role": user_data["role"],
+                "status": user_data.get("status", "active"),
+                "plan": user_data.get("plan", "standard"),
+                "owner_id": user_data.get("owner_id"),
+                "created_at": created_at,
+                "updated_at": created_at,
+            }
+            if "business" in existing_cols:
+                insert_data["business"] = user_data.get("business", "My Business")
+            if "owner" in existing_cols:
+                insert_data["owner"] = full_name
+
+            cols = [k for k in insert_data.keys() if k in existing_cols]
+            placeholders = ", ".join(["?"] * len(cols))
+            col_names = ", ".join(cols)
+            vals = [insert_data[c] for c in cols]
+
             conn.execute(
-                """
-                INSERT INTO users (id, business_id, business, owner, full_name, email, phone_number, password_hash, role, status, plan, owner_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user_id,
-                    biz_id,
-                    user_data.get("business", "My Business"),
-                    full_name,
-                    full_name,
-                    user_data["email"].lower(),
-                    user_data.get("phone_number"),
-                    user_data["password_hash"],
-                    user_data["role"],
-                    user_data.get("status", "active"),
-                    user_data.get("plan", "standard"),
-                    user_data.get("owner_id"),
-                    created_at,
-                    created_at,
-                ),
+                f"INSERT INTO users ({col_names}) VALUES ({placeholders})",
+                vals,
             )
             # Create business record if not exists
             conn.execute(
@@ -1800,6 +1903,15 @@ class SQLiteAdapter:
         conn.commit()
         conn.close()
         return {**sale_data, "id": sale_id, "invoice_number": inv_num, "created_at": now}
+
+    async def get_pos_sales(self, business_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM pos_sales WHERE business_id = ? ORDER BY created_at DESC LIMIT ?",
+            (business_id, limit),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     # Compatibility methods
     async def get_workspace(self, business_id: str) -> dict[str, Any] | None:

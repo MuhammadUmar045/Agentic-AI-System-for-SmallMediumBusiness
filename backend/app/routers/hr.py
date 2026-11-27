@@ -96,6 +96,9 @@ async def create_employee(
     user_id_created = None
 
     if payload.create_login:
+        existing_user = await db.get_user_by_email(payload.email.lower())
+        if existing_user:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A user login with this email already exists.")
         login_pwd = payload.login_password or "Welcome123!"
         new_user = {
             "business_id": business_id,
@@ -142,10 +145,10 @@ async def create_employee(
         email=created["email"],
         phone=created.get("phone"),
         role=created["role"],
-        base_salary=float(created["base_salary"]),
-        employment_status=created["employment_status"],
-        join_date=str(created["join_date"]),
-        department=created["department"],
+        base_salary=float(created.get("base_salary") or 0.0),
+        employment_status=created.get("employment_status", "active"),
+        join_date=str(created.get("join_date") or payload.join_date),
+        department=created.get("department") or payload.department or "Operations",
         created_at=str(created.get("created_at", "")),
     )
 

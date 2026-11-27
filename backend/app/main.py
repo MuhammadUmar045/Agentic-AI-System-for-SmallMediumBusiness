@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI, AuthenticationError, BadRequestError, RateLimitError
 
 from .config import Settings, get_settings
+from .csv_agent import map_and_normalize_csv
 from .database import get_database, lifespan
 from .routers.account import router as account_router
 from .routers.finance import router as finance_router
@@ -605,3 +606,17 @@ async def search_knowledge_base(
         count=payload.limit,
         category=payload.category,
     )
+
+
+@app.post("/api/v1/agent/map-csv")
+@app.post("/api/agent/map-csv")
+async def map_csv_to_schema(
+    payload: dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+    config: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    target_schema = str(payload.get("target_schema", "")).strip().lower()
+    csv_text = str(payload.get("csv_text", ""))
+    if target_schema not in ("inventory", "ledger", "employees"):
+        raise HTTPException(status_code=400, detail="target_schema must be 'inventory', 'ledger', or 'employees'.")
+    return await map_and_normalize_csv(target_schema, csv_text, config)

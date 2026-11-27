@@ -85,6 +85,10 @@ export const agentChat = (message, conversationId, workspaceState) => request("/
   method: "POST",
   body: JSON.stringify({ message, conversation_id: conversationId, workspace_state: workspaceState }),
 });
+export const agentMapCsv = (targetSchema, csvText) => request("/agent/map-csv", {
+  method: "POST",
+  body: JSON.stringify({ target_schema: targetSchema, csv_text: csvText }),
+});
 
 // ==================== HR & EMPLOYEES ====================
 export const hrListEmployees = () => request("/api/hr/employees");
@@ -240,6 +244,7 @@ export const accountUpdateConnections = (connections) => request("/api/account/c
 });
 
 // ==================== POS ATOMIC CHECKOUT ====================
+export const posListSales = (limit = 100) => request(`/api/pos/sales?limit=${limit}`);
 export const posAtomicCheckout = (salePayload) => request("/api/pos/checkout", {
   method: "POST",
   body: JSON.stringify(salePayload),

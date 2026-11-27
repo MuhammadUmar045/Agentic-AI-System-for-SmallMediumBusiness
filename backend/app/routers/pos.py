@@ -20,6 +20,17 @@ async def get_effective_business_id(payload: dict[str, Any]) -> str:
     return str(biz_id)
 
 
+@router.get("/sales")
+async def list_pos_sales(
+    limit: int = 100,
+    token_payload: dict[str, Any] = Depends(require_role(["owner", "manager", "cashier", "staff"])),
+    db=Depends(get_database),
+) -> list[dict[str, Any]]:
+    business_id = await get_effective_business_id(token_payload)
+    sales = await db.get_pos_sales(business_id, limit=limit)
+    return sales
+
+
 @router.post("/checkout", response_model=POSSaleResponse, status_code=status.HTTP_201_CREATED)
 async def atomic_pos_checkout(
     payload: POSSaleCheckoutRequest,

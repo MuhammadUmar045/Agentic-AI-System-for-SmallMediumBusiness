@@ -6,6 +6,7 @@ import {
 import { C } from "../data/constants.js";
 import { useAppState } from "../context/AppStateContext.jsx";
 import { invStatus, parseSimpleCsv, mapInventoryCsv, downloadTextFile } from "../utils/helpers.js";
+import { agentMapCsv } from "../utils/api.js";
 import { Card, Btn, Badge } from "./Primitives.jsx";
 import ViewWrap from "./ViewWrap.jsx";
 import DomainAgentDrawer from "./DomainAgentDrawer.jsx";
@@ -78,9 +79,20 @@ export default function InventoryView({ showToast }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
+      const csvText = String(reader.result || "");
       try {
-        const rows = parseSimpleCsv(String(reader.result));
+        const mapped = await agentMapCsv("inventory", csvText);
+        if (Array.isArray(mapped?.normalized_rows) && mapped.normalized_rows.length > 0) {
+          dispatch({ type: "IMPORT_INVENTORY_ITEMS", items: mapped.normalized_rows });
+          showToast(`Imported ${mapped.normalized_rows.length} product(s). ${mapped.notes || ""}`);
+          return;
+        }
+      } catch {
+        // Fallback to local heuristic mapper if offline
+      }
+      try {
+        const rows = parseSimpleCsv(csvText);
         if (rows.length === 0) { showToast("The CSV file is empty."); return; }
         const { items, mapping } = mapInventoryCsv(rows);
         if (items.length === 0) {

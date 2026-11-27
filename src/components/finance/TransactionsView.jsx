@@ -7,6 +7,7 @@ import { C } from "../../data/constants.js";
 import { Card, Btn, Badge } from "../Primitives.jsx";
 import ViewWrap from "../ViewWrap.jsx";
 import {
+  agentMapCsv,
   financeListLedger,
   financeCreateLedger,
   financeVoidLedger,
@@ -152,25 +153,14 @@ export default function TransactionsView({ showToast }) {
     }
     try {
       setImporting(true);
-      // Parse CSV into rows of dicts
-      const lines = csvText.trim().split("\n").map((l) => l.trim()).filter(Boolean);
-      if (lines.length < 2) {
-        showToast("CSV must contain a header and at least one data row.");
+      const mapped = await agentMapCsv("ledger", csvText);
+      const rows = Array.isArray(mapped?.normalized_rows) ? mapped.normalized_rows : [];
+      if (rows.length === 0) {
+        showToast(mapped?.notes || "Could not detect valid ledger rows from that CSV.");
         return;
       }
-      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",").map((c) => c.trim());
-        const rowObj = {};
-        headers.forEach((h, idx) => {
-          rowObj[h] = cols[idx] || "";
-        });
-        rows.push(rowObj);
-      }
-
       const result = await financeImportCsv(rows);
-      setImportResults(result);
+      setImportResults({ ...result, mappingNotes: mapped.notes });
       showToast(`Imported ${result.imported_count} rows (${result.error_count} rejected).`);
       loadData();
     } catch (err) {
@@ -631,7 +621,7 @@ export default function TransactionsView({ showToast }) {
             </div>
 
             <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px" }}>
-              Upload or paste CSV with columns: <code>transaction_date, entry_type, category, amount, description, contact_name</code>.
+              Upload or paste any CSV (including bank statements with Debit/Credit or custom headers). Our AI Schema Agent automatically maps columns to the ledger schema.
             </p>
 
             <input
@@ -676,6 +666,11 @@ export default function TransactionsView({ showToast }) {
 
             {importResults && (
               <div style={{ background: "#F8FAFC", padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 12.5 }}>
+                {importResults.mappingNotes && (
+                  <div style={{ color: C.teal, fontWeight: 600, marginBottom: 4 }}>
+                    {importResults.mappingNotes}
+                  </div>
+                )}
                 <div style={{ fontWeight: 600, color: "#166534" }}>
                   Successfully imported: {importResults.imported_count} rows
                 </div>

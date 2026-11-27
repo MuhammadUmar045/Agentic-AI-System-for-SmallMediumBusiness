@@ -43,6 +43,11 @@ export default function GlobalStyles() {
       .shimmer-text { background: linear-gradient(90deg, rgba(14,165,160,.6) 25%, rgba(14,165,160,1) 50%, rgba(14,165,160,.6) 75%); background-size: 200% 100%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 2s linear infinite; }
       @keyframes expandWidth { from { width: 0%; } to { width: 100%; } }
       .progress-fill { animation: expandWidth .8s ease-out both; }
+      .dash-card { transition: transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease, border-color .22s ease; }
+      .dash-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(19, 26, 44, .06); border-color: #D2D8E6 !important; }
+      .dash-stagger { animation: fadeUp .48s cubic-bezier(.16,1,.3,1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+      @keyframes livePulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .65; } }
+      .live-dot { animation: livePulse 2s ease-in-out infinite; }
       .mobile-menu-btn { display: none; }
       .vantage-sidebar { position: sticky; top: 0; left: 0; height: 100vh; transition: transform .2s ease; z-index: 31; }
       @media (max-width: 880px) {
@@ -54,7 +59,8 @@ export default function GlobalStyles() {
         .vantage-grid-3 { grid-template-columns: 1fr !important; }
       }
       @media (prefers-reduced-motion: reduce) {
-        .anim-in, .pulse-ring, .flow-line, .float-slow, .think-dot, .spin, .agent-step, .shimmer-text, .progress-fill { animation: none !important; }
+        .anim-in, .pulse-ring, .flow-line, .float-slow, .think-dot, .spin, .agent-step, .shimmer-text, .progress-fill, .dash-stagger, .live-dot { animation: none !important; }
+        .dash-card { transition: none !important; }
       }
       @media print {
         body * { visibility: hidden !important; }

@@ -726,21 +726,36 @@ export default function POSView({ showToast, onNavigate, ownerName, businessName
               >
                 <Search size={22} color={C.inkFaint} />
               </div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: C.ink }}>No products found</div>
-              <div style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
-                No items match your filter. Try clearing your search or category filter.
+              <div style={{ fontWeight: 700, fontSize: 16, color: C.ink }}>
+                {inventoryItems.length === 0 ? "No inventory products added yet" : "No products found"}
               </div>
-              <Btn
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery("");
-                  setSelectedCategory("All");
-                }}
-                style={{ marginTop: 14 }}
-              >
-                Reset Filters
-              </Btn>
+              <div style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
+                {inventoryItems.length === 0
+                  ? "Your catalog is empty. Head to the Inventory workspace to add products for counter checkout."
+                  : "No items match your filter. Try clearing your search or category filter."}
+              </div>
+              {inventoryItems.length === 0 ? (
+                <Btn
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onNavigate && onNavigate("inventory")}
+                  style={{ marginTop: 14 }}
+                >
+                  Go to Inventory →
+                </Btn>
+              ) : (
+                <Btn
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSelectedCategory("All");
+                  }}
+                  style={{ marginTop: 14 }}
+                >
+                  Reset Filters
+                </Btn>
+              )}
             </Card>
           ) : viewMode === "grid" ? (
             /* Grid View */
