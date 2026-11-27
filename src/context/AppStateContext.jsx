@@ -175,7 +175,7 @@ export function appReducer(state, action) {
       };
     }
     case "IMPORT_INVENTORY_ITEMS": {
-      return { ...state, inventory: action.items, activity: [logEntry("inventory", `Imported ${action.items.length} inventory rows from file.`), ...state.activity].slice(0, 40) };
+      return { ...state, inventory: action.items.map(normalizeInventoryItem), activity: [logEntry("inventory", `Imported ${action.items.length} inventory rows from file.`), ...state.activity].slice(0, 40) };
     }
 
     case "ADD_DRAFT": {

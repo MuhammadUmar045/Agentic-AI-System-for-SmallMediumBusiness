@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { C } from "../data/constants.js";
 import { useAppState } from "../context/AppStateContext.jsx";
-import { invStatus, parseSimpleCsv, downloadTextFile } from "../utils/helpers.js";
+import { invStatus, parseSimpleCsv, mapInventoryCsv, downloadTextFile } from "../utils/helpers.js";
 import { Card, Btn, Badge } from "./Primitives.jsx";
 import ViewWrap from "./ViewWrap.jsx";
 import DomainAgentDrawer from "./DomainAgentDrawer.jsx";
@@ -80,14 +80,17 @@ export default function InventoryView({ showToast }) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const rows = parseSimpleCsv(String(reader.result)).filter((r) => r.length >= 3 && r[0]);
-        if (rows.length === 0) { showToast("Couldn't find name,stock,threshold rows in that file."); return; }
-        const items = rows.map(([name, stock, threshold, trend], i) => ({
-          id: i + 1, name, stock: Number(stock) || 0, threshold: Number(threshold) || 0, trend: trend || "flat", reordered: false,
-        }));
+        const rows = parseSimpleCsv(String(reader.result));
+        if (rows.length === 0) { showToast("The CSV file is empty."); return; }
+        const { items, mapping } = mapInventoryCsv(rows);
+        if (items.length === 0) {
+          showToast("Couldn't detect any products in that file.");
+          return;
+        }
         dispatch({ type: "IMPORT_INVENTORY_ITEMS", items });
-        showToast("Inventory imported from file.");
-      } catch { showToast("Couldn't parse that file — expected simple CSV (name,stock,threshold,trend)."); }
+        const matched = Object.entries(mapping).map(([field, col]) => `${field}←${col}`).join(", ");
+        showToast(`Imported ${items.length} product${items.length === 1 ? "" : "s"}. Matched: ${matched}`);
+      } catch { showToast("Couldn't parse that CSV. Check its headers and quoted fields."); }
     };
     reader.readAsText(file);
     e.target.value = "";
