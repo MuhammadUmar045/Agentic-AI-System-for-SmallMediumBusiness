@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { AppStateProvider, useAppState } from "./context/AppStateContext.jsx";
+import { AppStateProvider, useAppState, createBlankStoreState } from "./context/AppStateContext.jsx";
+import { loadPersisted, clearPersisted, savePersisted } from "./utils/helpers.js";
 import { ROLE_NAV, ROLE_META } from "./data/constants.js";
 import GlobalStyles from "./components/GlobalStyles.jsx";
 import Landing from "./components/Landing.jsx";
@@ -42,7 +43,8 @@ function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const { state, dispatch, derived } = useAppState();
+  const [isHydrated, setIsHydrated] = useState(false);
+  const { state, dispatch, derived, activeBusinessId, setActiveBusinessId } = useAppState();
 
   const saveTimerRef = useRef(null);
 
@@ -55,35 +57,91 @@ function AppShell() {
       try {
         const user = await me();
         if (cancelled) return;
-        setProfile({ business: user.business, owner: user.owner, email: user.email, plan: user.plan });
+        const bizId = String(user.business_id || user.id);
+        setActiveBusinessId(bizId);
+        setProfile({ business: user.business, owner: user.owner, email: user.email, plan: user.plan, business_id: bizId });
         setRole(user.role);
         const allowedNav = ROLE_NAV[user.role] || ROLE_NAV.cashier || ["pos"];
         setActive(allowedNav[0]);
-        const workspace = await getWorkspace();
+        const workspace = await getWorkspace().catch(() => ({}));
         if (cancelled) return;
-        if (Object.keys(workspace.state || {}).length) dispatch({ type: "HYDRATE", payload: workspace.state });
+        if (workspace?.state && Object.keys(workspace.state).length) {
+          dispatch({ type: "HYDRATE", payload: workspace.state });
+          savePersisted(workspace.state, bizId);
+        } else {
+          const cached = loadPersisted(bizId);
+          if (cached) {
+            dispatch({ type: "HYDRATE", payload: cached });
+          } else {
+            const blank = createBlankStoreState(user.business, user.owner);
+            dispatch({ type: "HYDRATE", payload: blank });
+            savePersisted(blank, bizId);
+          }
+        }
+        setIsHydrated(true);
         setStage("app");
       } catch {
         setAccessToken(null);
+        setActiveBusinessId(null);
+        setIsHydrated(false);
+        dispatch({ type: "CLEAR_STORE" });
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [dispatch, setActiveBusinessId]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(""), 2800); }, []);
 
   const handleAuth = async (form, mode) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setIsHydrated(false);
+
     const session = await (mode === "signup" ? signUp(form) : signIn(form));
     setAccessToken(session.access_token);
     const user = session.user;
-    setProfile({ business: user.business, owner: user.owner, email: user.email, plan: user.plan });
+    const bizId = String(user.business_id || user.id);
+
+    setActiveBusinessId(bizId);
+    setProfile({ business: user.business, owner: user.owner, email: user.email, plan: user.plan, business_id: bizId });
     setRole(user.role);
     const allowedNav = ROLE_NAV[user.role] || ROLE_NAV.cashier || ["pos"];
     setActive(allowedNav[0]);
-    const workspace = await getWorkspace();
-    if (Object.keys(workspace.state || {}).length) dispatch({ type: "HYDRATE", payload: workspace.state });
+
+    if (mode === "signup") {
+      // Clean, fresh, dedicated store for this new signup
+      const freshState = createBlankStoreState(user.business, user.owner);
+      dispatch({ type: "HYDRATE", payload: freshState });
+      savePersisted(freshState, bizId);
+      // Persist the fresh store to backend immediately so the database has its own separate row
+      await saveWorkspace(freshState).catch(() => {});
+    } else {
+      // Existing user sign in
+      const workspace = await getWorkspace().catch(() => ({}));
+      if (workspace?.state && Object.keys(workspace.state).length) {
+        dispatch({ type: "HYDRATE", payload: workspace.state });
+        savePersisted(workspace.state, bizId);
+      } else {
+        const cached = loadPersisted(bizId);
+        const targetState = cached || createBlankStoreState(user.business, user.owner);
+        dispatch({ type: "HYDRATE", payload: targetState });
+        savePersisted(targetState, bizId);
+      }
+    }
+
+    setIsHydrated(true);
     setStage("app");
   };
+
+  const handleSignOut = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    clearPersisted();
+    setAccessToken(null);
+    setActiveBusinessId(null);
+    setIsHydrated(false);
+    setProfile({ business: "", owner: "", email: "" });
+    dispatch({ type: "CLEAR_STORE" });
+    setStage("landing");
+  }, [dispatch, setActiveBusinessId]);
 
   const handleNavigate = useCallback((section, resetChat) => {
     const allowed = ROLE_NAV[role] || ROLE_NAV.staff || [];
@@ -105,10 +163,12 @@ function AppShell() {
   }, [stage]);
 
   useEffect(() => {
-    if (stage !== "app" || !getAccessToken()) return undefined;
-    saveTimerRef.current = setTimeout(() => saveWorkspace(state).catch(() => {}), 800);
+    if (stage !== "app" || !isHydrated || !activeBusinessId || !getAccessToken()) return undefined;
+    saveTimerRef.current = setTimeout(() => {
+      saveWorkspace(state).catch(() => {});
+    }, 800);
     return () => clearTimeout(saveTimerRef.current);
-  }, [state, stage]);
+  }, [state, stage, isHydrated, activeBusinessId]);
 
   const alerts = useMemo(() => {
     if (role === "cashier") {
@@ -147,11 +207,11 @@ function AppShell() {
     <div className="vantage-root" style={{ display: "flex", background: "#F6F7FB", minHeight: "100vh" }}>
       <GlobalStyles />
       <Sidebar role={role} active={active} onNavigate={handleNavigate} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}
-        onSignOut={() => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); setAccessToken(null); setStage("landing"); }} onOpenPalette={() => setPaletteOpen(true)} pendingCount={derived.pendingRecs.length} />
+        onSignOut={handleSignOut} onOpenPalette={() => setPaletteOpen(true)} pendingCount={derived.pendingRecs.length} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <TopBar business={profile.business} role={role} setMobileOpen={setMobileOpen} alerts={alerts} activity={state.activity} />
         {active === "chat" && <ChatPlanner key={chatKey} onNavigate={handleNavigate} ownerName={profile.owner} role={role} />}
-        {active === "dashboard" && <DashboardView showToast={showToast} onNavigate={handleNavigate} />}
+        {active === "dashboard" && <DashboardView showToast={showToast} onNavigate={handleNavigate} business={profile.business} role={role} />}
         {active === "pos" && <POSView showToast={showToast} onNavigate={handleNavigate} ownerName={profile.owner} businessName={profile.business} role={role} />}
         {active === "finance" && <FinanceView showToast={showToast} />}
         {active === "transactions" && <TransactionsView showToast={showToast} />}

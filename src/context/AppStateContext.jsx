@@ -1,37 +1,89 @@
-import React, { createContext, useContext, useReducer, useMemo, useEffect } from "react";
+import React, { createContext, useContext, useReducer, useMemo, useEffect, useState } from "react";
 import {
   FINANCE_SERIES_SEED, FINANCE_KPIS_SEED, INITIAL_RECS,
   INITIAL_INVENTORY, INITIAL_DRAFTS, POS_SALES_SEED,
   CUSTOMERS_SEED, SUPPLIERS_SEED,
 } from "../data/constants.js";
-import { logEntry, loadPersisted, savePersisted, invStatus, normalizeInventoryItem } from "../utils/helpers.js";
+import { logEntry, savePersisted, invStatus, normalizeInventoryItem } from "../utils/helpers.js";
 
-const initialAppState = {
-  finance: { kpis: FINANCE_KPIS_SEED, series: FINANCE_SERIES_SEED, recs: INITIAL_RECS, runwayAdjustment: 0 },
-  inventory: INITIAL_INVENTORY.map(normalizeInventoryItem),
-  customers: CUSTOMERS_SEED,
-  suppliers: SUPPLIERS_SEED,
-  drafts: INITIAL_DRAFTS,
-  pos: { status: "disconnected", lastSync: null, sales: POS_SALES_SEED },
-  activity: [],
-  reports: [],
-};
+export function createBlankStoreState(businessName = "", ownerName = "") {
+  return {
+    finance: {
+      kpis: [
+        { key: "revenue", label: "Revenue (MTD)", value: 0, display: "₨0", trend: "flat", delta: "0%" },
+        { key: "expenses", label: "Expenses (MTD)", value: 0, display: "₨0", trend: "flat", delta: "0%" },
+        { key: "profit", label: "Net Profit", value: 0, display: "₨0", trend: "flat", delta: "0%" },
+        { key: "runway", label: "Cash Runway", value: 0, display: "0 mo", trend: "flat", delta: "0 mo" },
+      ],
+      series: [
+        { month: "Jan", revenue: 0, forecast: null },
+        { month: "Feb", revenue: 0, forecast: null },
+        { month: "Mar", revenue: 0, forecast: null },
+        { month: "Apr", revenue: 0, forecast: null },
+        { month: "May", revenue: 0, forecast: null },
+        { month: "Jun", revenue: 0, forecast: null },
+      ],
+      recs: [],
+      runwayAdjustment: 0,
+    },
+    inventory: [],
+    customers: [],
+    suppliers: [],
+    drafts: [],
+    pos: { status: "disconnected", lastSync: null, sales: [] },
+    activity: [],
+    reports: [],
+  };
+}
+
+export function createDemoStoreState() {
+  return {
+    finance: { kpis: FINANCE_KPIS_SEED, series: FINANCE_SERIES_SEED, recs: INITIAL_RECS, runwayAdjustment: 0 },
+    inventory: INITIAL_INVENTORY.map(normalizeInventoryItem),
+    customers: CUSTOMERS_SEED,
+    suppliers: SUPPLIERS_SEED,
+    drafts: INITIAL_DRAFTS,
+    pos: { status: "disconnected", lastSync: null, sales: POS_SALES_SEED },
+    activity: [
+      logEntry("system", "Demo sample data loaded successfully."),
+    ],
+    reports: [],
+  };
+}
 
 export function appReducer(state, action) {
   switch (action.type) {
     case "HYDRATE": {
       const incoming = action.payload || {};
+      const blank = createBlankStoreState();
       return {
-        ...initialAppState,
-        ...incoming,
-        inventory: (incoming.inventory || initialAppState.inventory).map(normalizeInventoryItem),
-        customers: incoming.customers && incoming.customers.length ? incoming.customers : CUSTOMERS_SEED,
-        suppliers: incoming.suppliers && incoming.suppliers.length ? incoming.suppliers : SUPPLIERS_SEED,
-        finance: { ...initialAppState.finance, ...(incoming.finance || {}) },
-        pos: { ...initialAppState.pos, ...(incoming.pos || {}) },
-        activity: incoming.activity || initialAppState.activity,
-        reports: incoming.reports || initialAppState.reports,
+        finance: {
+          kpis: incoming.finance?.kpis || blank.finance.kpis,
+          series: incoming.finance?.series || blank.finance.series,
+          recs: Array.isArray(incoming.finance?.recs) ? incoming.finance.recs : [],
+          runwayAdjustment: incoming.finance?.runwayAdjustment || 0,
+        },
+        inventory: Array.isArray(incoming.inventory) ? incoming.inventory.map(normalizeInventoryItem) : [],
+        customers: Array.isArray(incoming.customers) ? incoming.customers : [],
+        suppliers: Array.isArray(incoming.suppliers) ? incoming.suppliers : [],
+        drafts: Array.isArray(incoming.drafts) ? incoming.drafts : [],
+        pos: {
+          status: incoming.pos?.status || "disconnected",
+          lastSync: incoming.pos?.lastSync || null,
+          sales: Array.isArray(incoming.pos?.sales) ? incoming.pos.sales : [],
+        },
+        activity: Array.isArray(incoming.activity) ? incoming.activity : [],
+        reports: Array.isArray(incoming.reports) ? incoming.reports : [],
       };
+    }
+
+    case "CLEAR_STORE": {
+      return createBlankStoreState();
+    }
+
+    case "LOAD_DEMO_DATA":
+    case "RESET_DEMO": {
+      return createDemoStoreState();
     }
 
     case "APPROVE_REC": {
@@ -74,11 +126,24 @@ export function appReducer(state, action) {
       };
     }
     case "ADD_INVENTORY_ITEM": {
-      const nextId = Math.max(0, ...state.inventory.map((i) => i.id)) + 1;
+      const inv = state.inventory || [];
+      const nextId = Math.max(0, ...inv.map((i) => i.id || 0)) + 1;
+      const newItem = normalizeInventoryItem({
+        id: nextId,
+        name: action.name,
+        stock: Number(action.stock) || 0,
+        threshold: Number(action.threshold) || 20,
+        price: Number(action.price) || 100,
+        category: action.category || "General",
+        sku: action.sku || `SKU-${1000 + nextId}`,
+        supplierName: action.supplierName || "Local Supplier",
+        trend: "flat",
+        reordered: false,
+      });
       return {
         ...state,
-        inventory: [...state.inventory, { id: nextId, name: action.name, stock: action.stock, threshold: action.threshold || 50, trend: "flat", reordered: false }],
-        activity: [logEntry("inventory", `Added "${action.name}" (${action.stock} units).`), ...state.activity].slice(0, 40),
+        inventory: [...inv, newItem],
+        activity: [logEntry("inventory", `Added "${action.name}" (${action.stock} units).`), ...(state.activity || [])].slice(0, 40),
       };
     }
     case "UPDATE_INVENTORY_STOCK": {
@@ -251,9 +316,6 @@ export function appReducer(state, action) {
       return { ...state, reports: [action.report, ...state.reports].slice(0, 15) };
     }
 
-    case "RESET_DEMO":
-      return initialAppState;
-
     default:
       return state;
   }
@@ -262,38 +324,41 @@ export function appReducer(state, action) {
 const AppStateContext = createContext(null);
 
 export function AppStateProvider({ children }) {
-  const [state, dispatch] = useReducer(appReducer, initialAppState, (base) => {
-    const loaded = loadPersisted();
-    if (!loaded) return base;
-    return {
-      ...loaded,
-      customers: loaded.customers && loaded.customers.length ? loaded.customers : base.customers,
-      suppliers: loaded.suppliers && loaded.suppliers.length ? loaded.suppliers : base.suppliers,
-      inventory: (loaded.inventory && loaded.inventory.length ? loaded.inventory : base.inventory).map(normalizeInventoryItem),
-    };
-  });
-  useEffect(() => { savePersisted(state); }, [state]);
+  const [activeBusinessId, setActiveBusinessId] = useState(null);
+  const [state, dispatch] = useReducer(appReducer, null, () => createBlankStoreState());
+
+  useEffect(() => {
+    if (activeBusinessId && state) {
+      savePersisted(state, activeBusinessId);
+    }
+  }, [state, activeBusinessId]);
 
   const derived = useMemo(() => {
-    const lowStock = state.inventory.filter((i) => invStatus(i) !== "ok" && !i.reordered);
-    const pendingRecs = state.finance.recs.filter((r) => r.status === "pending");
-    const approvedRecs = state.finance.recs.filter((r) => r.status === "approved");
-    const unsentDrafts = state.drafts.filter((d) => !d.sent);
-    const sentDrafts = state.drafts.filter((d) => d.sent);
+    const inv = state?.inventory || [];
+    const fin = state?.finance || { recs: [], kpis: [], runwayAdjustment: 0 };
+    const drafts = state?.drafts || [];
+    const pos = state?.pos || { sales: [] };
+    const customers = state?.customers || [];
+
+    const lowStock = inv.filter((i) => invStatus(i) !== "ok" && !i.reordered);
+    const pendingRecs = fin.recs.filter((r) => r.status === "pending");
+    const approvedRecs = fin.recs.filter((r) => r.status === "approved");
+    const unsentDrafts = drafts.filter((d) => !d.sent);
+    const sentDrafts = drafts.filter((d) => d.sent);
     const totalImpact = approvedRecs.reduce((s, r) => s + (r.impactValue || 0), 0);
     const pendingImpact = pendingRecs.reduce((s, r) => s + (r.impactValue || 0), 0);
-    const runway = (state.finance.kpis.find((k) => k.key === "runway")?.value || 5.4) + state.finance.runwayAdjustment;
-    const todaysPosTotal = state.pos.sales.reduce((s, x) => s + x.total, 0);
-    const okInventoryRatio = state.inventory.length ? (state.inventory.length - lowStock.length) / state.inventory.length : 1;
-    const commsRatio = state.drafts.length ? sentDrafts.length / state.drafts.length : 0;
-    const financeScore = Math.round(60 + (approvedRecs.length / Math.max(1, state.finance.recs.length)) * 35);
+    const runway = ((fin.kpis.find((k) => k.key === "runway")?.value || 0) + (fin.runwayAdjustment || 0));
+    const todaysPosTotal = (pos.sales || []).reduce((s, x) => s + (x.total || 0), 0);
+    const okInventoryRatio = inv.length ? (inv.length - lowStock.length) / inv.length : 1;
+    const commsRatio = drafts.length ? sentDrafts.length / drafts.length : 0;
+    const financeScore = Math.round(60 + (approvedRecs.length / Math.max(1, fin.recs.length)) * 35);
     const inventoryScore = Math.round(okInventoryRatio * 100);
     const commsScore = Math.round(50 + commsRatio * 50);
     const salesScore = Math.min(99, Math.round(60 + todaysPosTotal / 200));
 
-    const customersWithDebit = (state.customers || []).filter((c) => (c.debit || 0) > 0);
+    const customersWithDebit = customers.filter((c) => (c.debit || 0) > 0);
     const totalDebit = customersWithDebit.reduce((sum, c) => sum + (c.debit || 0), 0);
-    const overdueDebitCount = (state.customers || []).filter((c) => c.status === "overdue" && (c.debit || 0) > 0).length;
+    const overdueDebitCount = customers.filter((c) => c.status === "overdue" && (c.debit || 0) > 0).length;
 
     return {
       lowStock, pendingRecs, approvedRecs, unsentDrafts, sentDrafts, totalImpact, pendingImpact, runway, todaysPosTotal,
@@ -307,7 +372,10 @@ export function AppStateProvider({ children }) {
     };
   }, [state]);
 
-  const value = useMemo(() => ({ state, dispatch, derived }), [state, derived]);
+  const value = useMemo(
+    () => ({ state, dispatch, derived, activeBusinessId, setActiveBusinessId }),
+    [state, derived, activeBusinessId]
+  );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 
