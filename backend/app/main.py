@@ -61,12 +61,17 @@ app.include_router(pos_router)
 app.include_router(whatsapp_router)
 
 
-def public_user(document: dict) -> UserResponse:
+def public_user(document: dict, business_name: str | None = None) -> UserResponse:
     biz_id = str(document.get("business_id") or document.get("business") or document["id"])
     return UserResponse(
         id=str(document["id"]),
         business_id=biz_id,
-        business=document.get("business") or document.get("business_id", ""),
+        # A tenant UUID is an identifier, not a display name. Older user rows
+        # may not contain the business label, so let callers resolve it from
+        # the businesses table and keep the UI fallback human-readable.
+        business=(document.get("business") if document.get("business") != biz_id else None)
+        or business_name
+        or "Your business",
         owner=document.get("full_name") or document.get("owner", ""),
         email=document["email"],
         phone_number=document.get("phone_number"),
@@ -143,7 +148,7 @@ async def register(payload: RegisterRequest, db=Depends(get_database)) -> AuthRe
         business_id=biz_id,
         role=created.get("role", "owner"),
     )
-    return AuthResponse(access_token=token, user=public_user(created))
+    return AuthResponse(access_token=token, user=public_user(created, payload.business.strip()))
 
 
 @app.post("/api/v1/auth/login", response_model=AuthResponse)
@@ -190,13 +195,19 @@ async def login(payload: LoginRequest, db=Depends(get_database)) -> AuthResponse
         business_id=biz_id,
         role=user.get("role", "staff"),
     )
-    return AuthResponse(access_token=token, user=public_user(user))
+    biz = await db.get_business(biz_id)
+    return AuthResponse(access_token=token, user=public_user(user, (biz or {}).get("name")))
 
 
 @app.get("/api/v1/auth/me", response_model=UserResponse)
 @app.get("/api/auth/me", response_model=UserResponse)
-async def me(current_user: dict = Depends(get_current_user)) -> UserResponse:
-    return public_user(current_user)
+async def me(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database),
+) -> UserResponse:
+    business_id = str(current_user.get("business_id") or current_user.get("owner_id") or current_user["id"])
+    biz = await db.get_business(business_id)
+    return public_user(current_user, (biz or {}).get("name"))
 
 
 # ==================== TEAM & ROLES (COMPATIBILITY) ====================
