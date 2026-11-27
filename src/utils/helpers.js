@@ -18,16 +18,16 @@ const DEFAULT_SUPPLIERS = {
 
 export function normalizeInventoryItem(item) {
   if (!item) return item;
-  const defSup = DEFAULT_SUPPLIERS[item.id] || { id: 1, name: "Al-Baraka Grain Mills", email: "orders@albarakagrains.com", phone: "+92 301 5550192" };
+  const defSup = DEFAULT_SUPPLIERS[item.id];
   return {
     ...item,
     price: typeof item.price === "number" ? item.price : (DEFAULT_PRICES[item.id] || 450),
     sku: item.sku || DEFAULT_SKUS[item.id] || `SKU-${1000 + (item.id || 1)}`,
     category: item.category || DEFAULT_CATEGORIES[item.id] || "General",
-    supplierId: item.supplierId || defSup.id,
-    supplierName: item.supplierName || defSup.name,
-    supplierEmail: item.supplierEmail || defSup.email,
-    supplierPhone: item.supplierPhone || defSup.phone,
+    supplierId: item.supplierId || defSup?.id || 1,
+    supplierName: item.supplierName || defSup?.name || "Local Supplier",
+    supplierEmail: item.supplierEmail || defSup?.email || "supplier@local.pk",
+    supplierPhone: item.supplierPhone || defSup?.phone || "+92 300 0000000",
   };
 }
 
@@ -55,19 +55,41 @@ export function parseSimpleCsv(text) {
   return text.trim().split(/\r?\n/).map((line) => line.split(",").map((c) => c.trim()));
 }
 
-export function loadPersisted() {
+export function getStorageKey(businessId) {
+  return businessId ? `vantage_app_state_v2_${businessId}` : null;
+}
+
+export function loadPersisted(businessId) {
   try {
-    const raw = typeof window !== "undefined" && window.localStorage.getItem("vantage_app_state_v2");
+    if (typeof window === "undefined" || !businessId) return null;
+    const key = getStorageKey(businessId);
+    const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function savePersisted(state) {
+export function savePersisted(state, businessId) {
   try {
-    if (typeof window !== "undefined") window.localStorage.setItem("vantage_app_state_v2", JSON.stringify(state));
+    if (typeof window === "undefined" || !businessId) return;
+    const key = getStorageKey(businessId);
+    window.localStorage.setItem(key, JSON.stringify(state));
   } catch {
     /* storage unavailable — fail silently, app still works in-memory */
+  }
+}
+
+export function clearPersisted(businessId) {
+  try {
+    if (typeof window === "undefined") return;
+    if (businessId) {
+      window.localStorage.removeItem(getStorageKey(businessId));
+    }
+    // Clean up any legacy unscoped storage keys so they never leak into other accounts
+    window.localStorage.removeItem("vantage_app_state_v2");
+    window.localStorage.removeItem("vantage_app_state");
+  } catch {
+    /* ignore */
   }
 }
