@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import {
   UploadCloud, FileDown, TrendingUp, TrendingDown, MinusCircle, AlertTriangle,
-  Sparkles, Package, Mail, MessageCircle, Truck, Plus, X
+  Sparkles, Package, Mail, MessageCircle, Truck
 } from "lucide-react";
 import { C } from "../data/constants.js";
 import { useAppState } from "../context/AppStateContext.jsx";
@@ -21,35 +21,6 @@ export default function InventoryView({ showToast }) {
   const [agentOpen, setAgentOpen] = useState(false);
   const [selectedReorderItem, setSelectedReorderItem] = useState(null);
   const [agentInitialPrompt, setAgentInitialPrompt] = useState("");
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [newItemForm, setNewItemForm] = useState({
-    name: "",
-    category: "General",
-    stock: 50,
-    threshold: 20,
-    price: 250,
-    supplierName: "",
-  });
-
-  const handleAddProductSubmit = (e) => {
-    e?.preventDefault();
-    if (!newItemForm.name.trim()) {
-      showToast("Please enter a product name.");
-      return;
-    }
-    dispatch({
-      type: "ADD_INVENTORY_ITEM",
-      name: newItemForm.name.trim(),
-      category: newItemForm.category.trim() || "General",
-      stock: Number(newItemForm.stock) || 0,
-      threshold: Number(newItemForm.threshold) || 20,
-      price: Number(newItemForm.price) || 100,
-      supplierName: newItemForm.supplierName.trim() || "Local Supplier",
-    });
-    showToast(`Added "${newItemForm.name.trim()}" to your inventory.`);
-    setNewItemForm({ name: "", category: "General", stock: 50, threshold: 20, price: 250, supplierName: "" });
-    setAddModalOpen(false);
-  };
 
   const handleUpload = (e) => {
     const file = e.target.files?.[0];
@@ -98,7 +69,6 @@ export default function InventoryView({ showToast }) {
       {/* Top action toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn variant="primary" size="sm" onClick={() => setAddModalOpen(true)}><Plus size={14} /> Add Product</Btn>
           <input ref={fileInputRef} type="file" accept=".csv,.txt" style={{ display: "none" }} onChange={handleUpload} />
           <Btn variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}><UploadCloud size={14} /> Import stock CSV</Btn>
           <Btn variant="ghost" size="sm" onClick={exportCsv}><FileDown size={14} /> Export data</Btn>
@@ -188,28 +158,7 @@ export default function InventoryView({ showToast }) {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: "48px 20px", textAlign: "center", color: C.inkSoft }}>
-                  <Package size={36} color={C.inkFaint} style={{ marginBottom: 12 }} />
-                  <div style={{ fontWeight: 700, fontSize: 15, color: C.navy, marginBottom: 4 }}>
-                    Your store inventory is empty
-                  </div>
-                  <div style={{ fontSize: 13, color: C.inkFaint, maxWidth: 420, margin: "0 auto 16px" }}>
-                    Get started by adding your store's products or importing from CSV. You can also load sample items to test.
-                  </div>
-                  <div style={{ display: "inline-flex", gap: 10 }}>
-                    <Btn variant="primary" size="sm" onClick={() => setAddModalOpen(true)}>
-                      <Plus size={14} /> Add Product
-                    </Btn>
-                    <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "LOAD_DEMO_DATA" })}>
-                      <Sparkles size={14} /> Load Sample Products
-                    </Btn>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              items.map((i) => {
+            {items.map((i) => {
               const status = invStatus(i);
               const TrendIcon = i.trend === "up" ? TrendingUp : i.trend === "down" ? TrendingDown : MinusCircle;
               return (
@@ -248,7 +197,7 @@ export default function InventoryView({ showToast }) {
                   </td>
                 </tr>
               );
-            }))}
+            })}
           </tbody>
         </table>
       </Card>
@@ -297,107 +246,6 @@ export default function InventoryView({ showToast }) {
         showToast={showToast}
         initialPrompt={agentInitialPrompt}
       />
-
-      {/* Add Product Modal */}
-      {addModalOpen && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(4px)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16,
-        }}>
-          <div style={{
-            background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-            overflow: "hidden", border: `1px solid ${C.line}`,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${C.line}`, background: C.bg }}>
-              <div style={{ fontWeight: 700, fontSize: 16, color: C.navy, display: "flex", alignItems: "center", gap: 8 }}>
-                <Package size={18} color={C.amberDeep} /> Add New Store Product
-              </div>
-              <button onClick={() => setAddModalOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.inkFaint }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddProductSubmit} style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Product Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Basmati Rice 5kg"
-                  value={newItemForm.name}
-                  onChange={(e) => setNewItemForm({ ...newItemForm, name: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Category</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Grains, Dairy, Snacks"
-                    value={newItemForm.category}
-                    onChange={(e) => setNewItemForm({ ...newItemForm, category: e.target.value })}
-                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Unit Price (₨)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="450"
-                    value={newItemForm.price}
-                    onChange={(e) => setNewItemForm({ ...newItemForm, price: e.target.value })}
-                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Initial Stock Units</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="50"
-                    value={newItemForm.stock}
-                    onChange={(e) => setNewItemForm({ ...newItemForm, stock: e.target.value })}
-                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Reorder Alert Threshold</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="20"
-                    value={newItemForm.threshold}
-                    onChange={(e) => setNewItemForm({ ...newItemForm, threshold: e.target.value })}
-                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 5 }}>Supplier Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Al-Baraka Grain Mills, Direct / Local"
-                  value={newItemForm.supplierName}
-                  onChange={(e) => setNewItemForm({ ...newItemForm, supplierName: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13.5 }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
-                <Btn type="button" variant="ghost" size="sm" onClick={() => setAddModalOpen(false)}>Cancel</Btn>
-                <Btn type="submit" variant="primary" size="sm"><Plus size={14} /> Save Product</Btn>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </ViewWrap>
   );
 }

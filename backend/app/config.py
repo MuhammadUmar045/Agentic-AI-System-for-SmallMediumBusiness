@@ -1,20 +1,10 @@
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_CONFIG_DIR = Path(__file__).resolve().parent
-_BACKEND_DIR = _CONFIG_DIR.parent
-_ROOT_DIR = _BACKEND_DIR.parent
-_ENV_FILES = [
-    str(_BACKEND_DIR / ".env"),
-    str(_ROOT_DIR / ".env"),
-    ".env",
-]
-
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=_ENV_FILES, env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Supabase connection settings
     supabase_url: str = ""
@@ -69,8 +59,8 @@ class Settings(BaseSettings):
             and key
             and "supabase" in self.supabase_url
             and not self.supabase_url.startswith("https://your-project")
-            # Accepts standard Supabase JWTs (eyJ...) or new secret/publishable key formats (sb_secret_..., sb_publishable_...)
-            and (key.startswith("eyJ") or key.startswith("sb_") or len(key) >= 20)
+            # Must be a real JWT (service_role or anon key), not a publishable/legacy key
+            and key.startswith("eyJ")
         )
 
     @property

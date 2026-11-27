@@ -933,36 +933,27 @@ class SQLiteAdapter:
         biz_id = user_data.get("business_id") or user_data.get("business", user_id)
 
         try:
-            cursor = conn.execute("PRAGMA table_info(users)")
-            existing_cols = {row[1] for row in cursor.fetchall()}
-            
-            insert_data = {
-                "id": user_id,
-                "business_id": biz_id,
-                "full_name": full_name,
-                "email": user_data["email"].lower(),
-                "phone_number": user_data.get("phone_number"),
-                "password_hash": user_data["password_hash"],
-                "role": user_data["role"],
-                "status": user_data.get("status", "active"),
-                "plan": user_data.get("plan", "standard"),
-                "owner_id": user_data.get("owner_id"),
-                "created_at": created_at,
-                "updated_at": created_at,
-            }
-            if "business" in existing_cols:
-                insert_data["business"] = user_data.get("business", "My Business")
-            if "owner" in existing_cols:
-                insert_data["owner"] = full_name
-
-            cols = [k for k in insert_data.keys() if k in existing_cols]
-            placeholders = ", ".join(["?"] * len(cols))
-            col_names = ", ".join(cols)
-            vals = [insert_data[c] for c in cols]
-
             conn.execute(
-                f"INSERT INTO users ({col_names}) VALUES ({placeholders})",
-                vals,
+                """
+                INSERT INTO users (id, business_id, business, owner, full_name, email, phone_number, password_hash, role, status, plan, owner_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    biz_id,
+                    user_data.get("business", "My Business"),
+                    full_name,
+                    full_name,
+                    user_data["email"].lower(),
+                    user_data.get("phone_number"),
+                    user_data["password_hash"],
+                    user_data["role"],
+                    user_data.get("status", "active"),
+                    user_data.get("plan", "standard"),
+                    user_data.get("owner_id"),
+                    created_at,
+                    created_at,
+                ),
             )
             # Create business record if not exists
             conn.execute(
