@@ -934,32 +934,40 @@ async def upload_hr_policy(
     if not chunks:
         raise HTTPException(status_code=400, detail="Document content too short or empty")
 
-    client = None
-    if config.openai_api_key:
-        client = AsyncOpenAI(api_key=config.openai_api_key)
-
     inserted_count = 0
-    for idx, c_text in enumerate(chunks):
-        embedding = None
-        if client:
-            try:
-                emb_res = await client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=c_text,
-                )
-                embedding = emb_res.data[0].embedding
-            except Exception as exc:
-                logger.warning("Policy embedding skipped: %s", exc)
+    if config.openai_api_key:
+        async with AsyncOpenAI(api_key=config.openai_api_key) as client:
+            for idx, c_text in enumerate(chunks):
+                embedding = None
+                try:
+                    emb_res = await client.embeddings.create(
+                        model="text-embedding-3-small",
+                        input=c_text,
+                    )
+                    embedding = emb_res.data[0].embedding
+                except Exception as exc:
+                    logger.warning("Policy embedding skipped: %s", exc)
 
-        chunk_doc = {
-            "business_id": business_id,
-            "document_name": payload.document_name.strip(),
-            "content": c_text,
-            "chunk_index": idx,
-            "embedding": embedding,
-        }
-        await db.insert_hr_policy_chunk(chunk_doc)
-        inserted_count += 1
+                chunk_doc = {
+                    "business_id": business_id,
+                    "document_name": payload.document_name.strip(),
+                    "content": c_text,
+                    "chunk_index": idx,
+                    "embedding": embedding,
+                }
+                await db.insert_hr_policy_chunk(chunk_doc)
+                inserted_count += 1
+    else:
+        for idx, c_text in enumerate(chunks):
+            chunk_doc = {
+                "business_id": business_id,
+                "document_name": payload.document_name.strip(),
+                "content": c_text,
+                "chunk_index": idx,
+                "embedding": None,
+            }
+            await db.insert_hr_policy_chunk(chunk_doc)
+            inserted_count += 1
 
     await db.record_audit_log(
         business_id=business_id,

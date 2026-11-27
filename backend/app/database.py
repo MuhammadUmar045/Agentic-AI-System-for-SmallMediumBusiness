@@ -206,6 +206,10 @@ class SupabaseAdapter:
         res = await self._post("subscriptions", sub_data)
         return res[0] if res and isinstance(res, list) else sub_data
 
+    async def update_subscription(self, business_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+        res = await self._patch("subscriptions", {"business_id": f"eq.{business_id}"}, updates)
+        return res[0] if res and isinstance(res, list) else None
+
     async def record_ai_usage(self, usage_data: dict[str, Any]) -> None:
         await self._post("ai_usage_logs", usage_data)
         sub = await self.get_subscription(usage_data["business_id"])
@@ -609,6 +613,34 @@ class SupabaseAdapter:
         assert self.client is not None
         await self.client.post("/conversations", json=payload, headers=headers)
         return payload
+
+    async def insert_knowledge(self, doc: dict[str, Any]) -> dict[str, Any]:
+        res = await self._post("business_knowledge", doc)
+        return res[0] if res and isinstance(res, list) else doc
+
+    async def search_knowledge(
+        self,
+        query_embedding: list[float],
+        *,
+        business_id: str,
+        threshold: float = 0.5,
+        count: int = 4,
+        category: str | None = None,
+    ) -> list[dict[str, Any]]:
+        assert self.client is not None
+        rpc_payload: dict[str, Any] = {
+            "query_embedding": query_embedding,
+            "match_business_id": business_id,
+            "match_threshold": threshold,
+            "match_count": count,
+        }
+        if category is not None:
+            rpc_payload["filter_category"] = category
+        resp = await self.client.post("/rpc/match_business_knowledge", json=rpc_payload)
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("Supabase RPC match_business_knowledge returned %s: %s", resp.status_code, resp.text)
+        return []
 
 
 class SQLiteAdapter:
@@ -1198,6 +1230,40 @@ class SQLiteAdapter:
             conn.close()
             return sub
         return dict(row)
+
+    async def create_subscription(self, sub_data: dict[str, Any]) -> dict[str, Any]:
+        conn = self._get_conn()
+        sub_id = sub_data.get("id") or str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO subscriptions (id, business_id, plan, ai_query_allowance, ai_queries_used, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sub_id,
+                sub_data["business_id"],
+                sub_data.get("plan", "standard"),
+                int(sub_data.get("ai_query_allowance", 500)),
+                int(sub_data.get("ai_queries_used", 0)),
+                sub_data.get("status", "active"),
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        return {**sub_data, "id": sub_id, "created_at": now}
+
+    async def update_subscription(self, business_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+        if not updates:
+            return await self.get_subscription(business_id)
+        conn = self._get_conn()
+        fields = [f"{k} = ?" for k in updates.keys()]
+        vals = list(updates.values()) + [business_id]
+        conn.execute(f"UPDATE subscriptions SET {', '.join(fields)} WHERE business_id = ?", vals)
+        conn.commit()
+        conn.close()
+        return await self.get_subscription(business_id)
 
     async def record_ai_usage(self, usage_data: dict[str, Any]) -> None:
         conn = self._get_conn()
@@ -1978,7 +2044,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 _default_db: SupabaseAdapter | SQLiteAdapter | None = None
 
 
-def get_database(request: Request) -> SupabaseAdapter | SQLiteAdapter:
+async def get_database(request: Request) -> SupabaseAdapter | SQLiteAdapter:
     global _default_db
     if hasattr(request.app.state, "db") and request.app.state.db is not None:
         return request.app.state.db
@@ -1988,4 +2054,5 @@ def get_database(request: Request) -> SupabaseAdapter | SQLiteAdapter:
             _default_db = SupabaseAdapter(settings)
         else:
             _default_db = SQLiteAdapter()
+        await _default_db.connect()
     return _default_db

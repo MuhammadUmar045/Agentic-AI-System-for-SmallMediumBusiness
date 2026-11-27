@@ -35,18 +35,23 @@ export function Card({ children, style }) {
   );
 }
 
-export function Badge({ children, tone = "neutral" }) {
+export function Badge({ children, text, tone = "neutral" }) {
   const tones = {
     neutral: { bg: "#EEF0F6", fg: C.inkSoft },
     ok: { bg: C.tealSoft, fg: "#0A7873" },
+    positive: { bg: C.tealSoft, fg: "#0A7873" },
+    teal: { bg: C.tealSoft, fg: "#0A7873" },
     low: { bg: C.amberSoft, fg: C.amberDeep },
+    warning: { bg: C.amberSoft, fg: C.amberDeep },
+    amber: { bg: C.amberSoft, fg: C.amberDeep },
     critical: { bg: C.coralSoft, fg: C.coral },
+    negative: { bg: C.coralSoft, fg: C.coral },
     info: { bg: "#E7EAF3", fg: C.navy },
   };
-  const t = tones[tone];
+  const t = tones[tone] || tones.neutral;
   return (
     <span style={{ background: t.bg, color: t.fg, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, letterSpacing: .2 }}>
-      {children}
+      {children ?? text}
     </span>
   );
 }

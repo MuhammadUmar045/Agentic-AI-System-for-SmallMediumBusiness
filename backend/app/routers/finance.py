@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import logging
 import uuid
 from typing import Any
@@ -398,21 +398,21 @@ async def generate_executive_report(
 
     if config.openai_api_key:
         try:
-            client = AsyncOpenAI(api_key=config.openai_api_key)
-            prompt = (
-                f"You are the AI COO. Write an executive summary paragraph for the business owner.\n"
-                f"Financials: Revenue PKR {rev:,.2f}, Expenses PKR {exp:,.2f}, Net PKR {net:,.2f}, "
-                f"Gross margin {health['gross_margin_pct']}%, Health score {health['health_score']}/100.\n"
-                f"HR: {active_count} active employees, total payroll PKR {total_payroll:,.2f}.\n"
-                f"Provide actionable business guidance in 3 concise sentences."
-            )
-            resp = await client.chat.completions.create(
-                model=config.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
-                temperature=0.3,
-            )
-            narrative = resp.choices[0].message.content.strip()
+            async with AsyncOpenAI(api_key=config.openai_api_key) as client:
+                prompt = (
+                    f"You are the AI COO. Write an executive summary paragraph for the business owner.\n"
+                    f"Financials: Revenue PKR {rev:,.2f}, Expenses PKR {exp:,.2f}, Net PKR {net:,.2f}, "
+                    f"Gross margin {health['gross_margin_pct']}%, Health score {health['health_score']}/100.\n"
+                    f"HR: {active_count} active employees, total payroll PKR {total_payroll:,.2f}.\n"
+                    f"Provide actionable business guidance in 3 concise sentences."
+                )
+                resp = await client.chat.completions.create(
+                    model=config.openai_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=300,
+                    temperature=0.3,
+                )
+                narrative = resp.choices[0].message.content.strip()
         except Exception as exc:
             logger.warning("LLM executive summary skipped: %s", exc)
 

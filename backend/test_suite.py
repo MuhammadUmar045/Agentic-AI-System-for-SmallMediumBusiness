@@ -208,8 +208,22 @@ def test_csv_import_validation():
 # 5. INTEGRATION & RBAC TESTS (HTTP ASGI)
 # ==============================================================================
 
+@pytest.fixture
+async def isolated_sqlite_db(tmp_path):
+    db_file = str(tmp_path / "test_suite.sqlite3")
+    db = SQLiteAdapter(db_file)
+    await db.connect()
+    prev_db = getattr(app.state, "db", None)
+    app.state.db = db
+    try:
+        yield db
+    finally:
+        app.state.db = prev_db
+        await db.close()
+
+
 @pytest.mark.anyio
-async def test_full_rbac_and_workflow_integration():
+async def test_full_rbac_and_workflow_integration(isolated_sqlite_db):
     """
     Tests:
     - 5 Roles: Owner, Manager, HR Officer, Cashier, Staff
@@ -400,7 +414,7 @@ async def test_full_rbac_and_workflow_integration():
 
 
 @pytest.mark.anyio
-async def test_tenant_isolation_and_rls():
+async def test_tenant_isolation_and_rls(isolated_sqlite_db):
     """
     RLS & Tenant Isolation (FR-P.4, SEC-5):
     Tenant B cannot access Tenant A's employees, attendance, leave, payroll, or ledger entries.
@@ -460,7 +474,7 @@ async def test_tenant_isolation_and_rls():
 
 
 @pytest.mark.anyio
-async def test_hr_policy_rag_grounding_and_fallback():
+async def test_hr_policy_rag_grounding_and_fallback(isolated_sqlite_db):
     """
     IT-07: HR Policy Upload & Grounded Question Answering (FR-5.5)
     Tests policy document upload, grounded response retrieval, and uncovered fallback.

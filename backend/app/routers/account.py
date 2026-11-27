@@ -362,14 +362,10 @@ async def upgrade_plan(
     # In production, this generates a Stripe/Polar checkout URL
     sub = await db.get_subscription(business_id)
     if sub:
-        conn = db._get_conn() if hasattr(db, "_get_conn") else None
-        if conn:
-            conn.execute(
-                "UPDATE subscriptions SET plan = ?, ai_query_allowance = ? WHERE business_id = ?",
-                (target_plan.lower(), new_allowance, business_id),
-            )
-            conn.commit()
-            conn.close()
+        await db.update_subscription(
+            business_id,
+            {"plan": target_plan.lower(), "ai_query_allowance": new_allowance},
+        )
 
     await db.record_audit_log(
         business_id=business_id,

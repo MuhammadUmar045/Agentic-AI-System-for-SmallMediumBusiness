@@ -65,7 +65,7 @@ export default function HRAssistantView({ showToast, role }) {
         },
       ]);
       if (res.ai_queries_remaining !== undefined && billingInfo) {
-        setBillingInfo((b) => (b ? { ...b, queries_remaining: res.ai_queries_remaining } : b));
+        setBillingInfo((b) => (b ? { ...b, ai_queries_remaining: res.ai_queries_remaining, queries_remaining: res.ai_queries_remaining } : b));
       }
     } catch (err) {
       setMessages([
@@ -177,25 +177,30 @@ export default function HRAssistantView({ showToast, role }) {
             </Card>
 
             {/* AI Meter Quick Status */}
-            {billingInfo && (
-              <Card>
-                <div style={{ fontWeight: 600, fontSize: 12.5, color: C.inkSoft, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Sparkles size={14} color={C.teal} /> AI Query Allowance
-                </div>
-                <div style={{ fontSize: 13, color: C.ink }}>
-                  Remaining: <strong>{billingInfo.queries_remaining ?? (billingInfo.query_allowance - billingInfo.queries_used)}</strong> / {billingInfo.query_allowance} queries
-                </div>
-                <div style={{ width: "100%", background: "#E5E8F0", height: 6, borderRadius: 3, marginTop: 8, overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${Math.min(100, (billingInfo.queries_used / (billingInfo.query_allowance || 1)) * 100)}%`,
-                      background: C.teal,
-                    }}
-                  />
-                </div>
-              </Card>
-            )}
+            {billingInfo && (() => {
+              const allowance = Number(billingInfo.ai_query_allowance ?? billingInfo.query_allowance ?? 0);
+              const used = Number(billingInfo.ai_queries_used ?? billingInfo.queries_used ?? 0);
+              const remaining = Number(billingInfo.ai_queries_remaining ?? billingInfo.queries_remaining ?? Math.max(0, allowance - used));
+              return (
+                <Card>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: C.inkSoft, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Sparkles size={14} color={C.teal} /> AI Query Allowance
+                  </div>
+                  <div style={{ fontSize: 13, color: C.ink }}>
+                    Remaining: <strong>{remaining}</strong> / {allowance} queries
+                  </div>
+                  <div style={{ width: "100%", background: "#E5E8F0", height: 6, borderRadius: 3, marginTop: 8, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${Math.min(100, (used / (allowance || 1)) * 100)}%`,
+                        background: C.teal,
+                      }}
+                    />
+                  </div>
+                </Card>
+              );
+            })()}
           </div>
         )}
 
