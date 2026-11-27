@@ -164,6 +164,16 @@ export function appReducer(state, action) {
         activity: [logEntry("inventory", `Removed "${item.name}" from inventory.`), ...state.activity].slice(0, 40),
       };
     }
+    case "UPDATE_INVENTORY_ITEM": {
+      const item = state.inventory.find((i) => i.id === action.id);
+      if (!item) return state;
+      const updated = normalizeInventoryItem({ ...item, ...action.updates, id: item.id });
+      return {
+        ...state,
+        inventory: state.inventory.map((i) => (i.id === action.id ? updated : i)),
+        activity: [logEntry("inventory", `Updated product "${updated.name}".`), ...state.activity].slice(0, 40),
+      };
+    }
     case "IMPORT_INVENTORY_ITEMS": {
       return { ...state, inventory: action.items, activity: [logEntry("inventory", `Imported ${action.items.length} inventory rows from file.`), ...state.activity].slice(0, 40) };
     }
